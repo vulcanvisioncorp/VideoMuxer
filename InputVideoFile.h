@@ -20,7 +20,6 @@
 
 - (instancetype)initWithPath:(NSString *)filePath options:(AVDictionary *)options;
 
-- (BOOL)seekToStartTime:(float)startTimeInSecs;
 - (BOOL)readIntoPacket:(AVPacket *)packet;
 - (BOOL)readIntoPacketFromFirstStream:(AVPacket *)packet;
 
