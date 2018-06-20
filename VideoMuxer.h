@@ -1,0 +1,56 @@
+//
+//  VideoMuxer.h
+//  VULCAM
+//
+//  Created by Eugene Alexeev on 05/07/2017.
+//  Copyright © 2017 Vulcan Vision Corporation. All rights reserved.
+//
+
+#import <Foundation/Foundation.h>
+
+#import "InputVideoFile.h"
+#import "OutputVideoFile.h"
+
+typedef NSNumber *(^OutputIdBlock)(NSInteger trackId);
+
+@protocol VideoMuxerDelegate <NSObject>
+
+- (void)muxingDidStarted:(OutputVideoFile *)file;
+- (void)muxingDidFailed;
+- (void)muxingDidCancelled;
+- (void)muxingProgress:(float)progress;
+
+- (void)videoPartCanBePlayed:(NSString *)outputPath;
+- (void)muxingFinished:(NSString *)outputPath size:(unsigned long)bytes;
+
+@end
+
+@interface VideoMuxer : NSObject
+
+@property (weak, nonatomic) id<VideoMuxerDelegate> delegate;
+@property (nonatomic, readonly) float progress;
+@property (nonatomic, readonly) BOOL isConverting;
+
+- (void)convertInputs:(NSArray<NSString *> *)inputPaths
+             toOutput:(NSString *)outputPath
+         expectedSize:(unsigned long)expectedSizeBytes;
+
+/**
+ This method fetches preffered Names for ouput tracks with outputIdBlock() block. If you don't have any requirements on that matter, just pass nil. For handling error case in finding/calculating output Id, you should return nil
+ */
+- (void)convertInput:(NSString *)inputPath
+            toFolder:(NSString *)outputsFolderPath
+    outputsExtension:(NSString *)extension
+        expectedSize:(unsigned long)expectedSizeBytes
+preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
+
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict
+                     toFolder:(NSString *)outputFolderPath;
+
+- (void)singleConvertationInput:(NSString *)inputPath
+                         output:(NSString *)outputPath
+                   expectedSize:(unsigned long)size;
+
+- (void)abortAllConvertations;
+
+@end
