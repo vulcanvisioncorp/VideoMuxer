@@ -26,6 +26,12 @@
 
 #import "VideoMuxer.h"
 
+static const int k_DOWNLOAD_STARTED = 50000; //in bytes
+
+static NSString *const kVVCameras = @"cameras";
+static NSString *const kVVMp4Stream = @"mp4Stream";
+static NSString *const kVVContentSize = @"contentSize";
+
 @interface VideoMuxer()
 {
     BOOL _isCancelled;
@@ -47,6 +53,356 @@
     }
     
     return self;
+}
+
+/**
+ This method correctly works only with one-video-stream input files! Other streams will be ignored
+ */
+- (void)convertInputs:(NSArray<NSString *> *)inputPaths
+             toOutput:(NSString *)outputPath
+         expectedSize:(unsigned long)expectedSizeBytes
+{
+    dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
+    dispatch_async(convertQueue, ^{
+        
+        unsigned long readSizeBytes = 0;
+        
+        OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputPath];
+        NSMutableArray<InputVideoFile *> *inputFiles = [NSMutableArray new];
+        for (int i = 0, max = (int)inputPaths.count; i < max; i++) {
+            
+            NSString *path = inputPaths[i];
+            InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:path options:NULL];
+            if (!inputFile) {
+                if ([self.delegate respondsToSelector:@selector(muxingDidFailed)]) {
+                    [self.delegate muxingDidFailed];
+                }
+                return;
+            }
+            [inputFiles addObject:inputFile];
+            [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:i];
+        }
+        [outputFile writeHeader];
+        
+        self->_isConverting = YES;
+        BOOL isReading = YES;
+        BOOL isReadyForReading = NO;
+        NSMutableDictionary<NSNumber *, NSNumber *> *startOffsets = [NSMutableDictionary new];
+        NSDate *startDate = [NSDate date];
+        while (isReading)   {
+            
+            int successfulReadings = 0;
+            for (int i = 0, max = (int)inputFiles.count; i < max; i++) {
+                
+                InputVideoFile *inputFile = inputFiles[i];
+                
+                AVPacket packet;
+                BOOL success = YES;
+                success = [inputFile readIntoPacketFromFirstStream:&packet];
+                if (!success) {
+                    NSLog(@"File probably ended!");
+                    break;
+                }
+                readSizeBytes += packet.size;
+                successfulReadings++;
+                
+                packet.stream_index = i;
+                packet.pts = av_rescale_q(packet.pts, inputFile.firstStream->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
+                packet.dts = av_rescale_q(packet.dts, inputFile.firstStream->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
+                
+                if (![startOffsets objectForKey:@(packet.stream_index)]) {
+                    startOffsets[@(packet.stream_index)] = @(packet.pts);
+                }
+                
+                packet.pts = packet.pts - startOffsets[@(packet.stream_index)].longValue;
+                packet.dts = packet.dts - startOffsets[@(packet.stream_index)].longValue;
+                
+                success = [outputFile writePacket:&packet];
+                av_packet_unref(&packet);
+                if (!success) {
+                    
+                    if ([self.delegate respondsToSelector:@selector(muxingDidFailed)]) {
+                        [self.delegate muxingDidFailed];
+                    }
+                    break;
+                }
+                
+                if (readSizeBytes > k_DOWNLOAD_STARTED && !isReadyForReading) {
+                    
+                    isReadyForReading = YES;
+                    if ([self.delegate respondsToSelector:@selector(muxingDidStarted:)]) {
+                        [self.delegate muxingDidStarted:outputFile];
+                    }
+                }
+            }
+            
+            if (expectedSizeBytes > 0) {
+                self->_progress = (float)readSizeBytes/(float)expectedSizeBytes;
+                if ([self.delegate respondsToSelector:@selector(muxingProgress:overallProgress:)]) {
+                    [self.delegate muxingProgress:0.0 overallProgress:self->_progress];
+                }
+            }
+            
+            if (successfulReadings == 0) {
+                break;
+            }
+        }
+        
+        [outputFile writeTrailer];
+        
+        NSDate *endDate = [NSDate date];
+        NSTimeInterval executionTime = [endDate timeIntervalSinceDate:startDate];
+        NSLog(@"Done! execution = %f", executionTime);
+        
+        self->_isConverting = NO;
+        
+        if ([self.delegate respondsToSelector:@selector(muxingFinished:size:)]) {
+            [self.delegate muxingFinished:outputPath size:readSizeBytes];
+        }
+    });
+}
+
+- (void)convertInput:(NSString *)inputPath toFolder:(NSString *)outputsFolderPath outputsExtension:(NSString *)extension expectedSize:(unsigned long)expectedSizeBytes preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
+{
+    dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
+    dispatch_async(convertQueue, ^{
+        
+        unsigned long readSizeBytes = 0;
+        
+        InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];
+        NSMutableDictionary<NSNumber *, OutputVideoFile *> *outputFiles = [NSMutableDictionary new];    //key is a stream index from input file.
+        
+        NSArray *sortedStreamIds = [[inputFile.streams allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        for (NSNumber *streamId in sortedStreamIds)
+        {
+            NSNumber *outputId = outputIdBlock != nil ? outputIdBlock(streamId.integerValue) : streamId;
+            if (!outputId)
+            {
+                if ([self.delegate respondsToSelector:@selector(muxingDidFailed)]) {
+                    [self.delegate muxingDidFailed];
+                }
+                return;
+            }
+            
+            NSString *outputFilePath = @"";
+            if ([extension isEqualToString:@"m3u8"]) {
+                [[NSFileManager defaultManager] createDirectoryAtPath:[outputsFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%d", outputId.intValue]] withIntermediateDirectories:YES attributes:nil error:nil];
+                outputFilePath = [outputsFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%d/%d.%@", outputId.intValue, outputId.intValue, extension]];
+            } else {
+                outputFilePath = [outputsFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%d.%@", outputId.intValue, extension]];
+            }
+            
+            OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputFilePath];
+            [outputFile createOutputStream:inputFile.streams[streamId].stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
+            [outputFile writeHeader];
+            
+            outputFiles[streamId] = outputFile;
+        }
+        
+        self->_isConverting = YES;
+        BOOL isReading = YES;
+        BOOL isReadyForReading = NO;
+        unsigned long currentFrameNum = 0;
+        
+        while (isReading)
+        {
+            AVPacket packet;
+            isReading = [inputFile readIntoPacket:&packet];
+            if (!isReading) {
+                break;
+            }
+            
+            currentFrameNum++;
+            
+            OutputVideoFile *outputFile = outputFiles[@(packet.stream_index)];
+            packet.pts = av_rescale_q(packet.pts, inputFile.streams[@(packet.stream_index)].stream->time_base, outputFile.firstStream->time_base);
+            packet.dts = av_rescale_q(packet.dts, inputFile.streams[@(packet.stream_index)].stream->time_base, outputFile.firstStream->time_base);
+            packet.stream_index = outputFile.firstStream->index;
+            
+            readSizeBytes += packet.size;
+            BOOL success = [outputFile writePacket:&packet];
+            if (!success)
+            {
+                NSLog(@"Error!");
+                //call callback of error
+                break;
+            }
+            
+            if (readSizeBytes > k_DOWNLOAD_STARTED && !isReadyForReading) {
+                
+                isReadyForReading = YES;
+                if ([self.delegate respondsToSelector:@selector(muxingDidStarted:)]) {
+                    [self.delegate muxingDidStarted:outputFile];
+                }
+            }
+            
+            self->_progress = (float)(readSizeBytes/1024)/(float)(expectedSizeBytes/1024);
+            if ([self.delegate respondsToSelector:@selector(muxingProgress:overallProgress:)]) {
+                [self.delegate muxingProgress:0.0f overallProgress:self->_progress];
+            }
+        }
+        
+        for (OutputVideoFile *f in outputFiles.allValues) {
+            [f writeTrailer];
+        }
+        NSLog(@"Done! frames = %ld", currentFrameNum);
+        
+        self->_isConverting = NO;
+        if ([self.delegate respondsToSelector:@selector(muxingFinished:size:)]) {
+            [self.delegate muxingFinished:outputsFolderPath size:readSizeBytes];
+        }
+    });
+}
+
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict toFolder:(NSString *)outputFolderPath
+{
+    dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
+    dispatch_async(convertQueue, ^{
+        
+        unsigned long readSizeBytes = 0;
+        
+        NSString *videoOutputPath     = [outputFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mp4", [jsonDict objectForKey:@"id"]]];
+        NSString *temporaryOutputPath = [outputFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_temp.mp4", [jsonDict objectForKey:@"id"]]];
+        
+        AVDictionary *options = nil;
+        NSMutableArray<InputVideoFile *> *inputFiles = [NSMutableArray new];
+        OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
+        
+        unsigned long expectedSizeBytes = 0;
+        NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        for (NSString *camID in sortedKeys)
+        {
+            NSDictionary *cam = [jsonDict[kVVCameras] objectForKey:camID];
+            expectedSizeBytes += [cam[kVVContentSize] integerValue];
+            NSString *hlsAddr = cam[kVVMp4Stream];
+            
+            InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:hlsAddr options:options];
+            if (!inputFile) {
+                if ([self.delegate respondsToSelector:@selector(muxingDidFailed)]) {
+                    [self.delegate muxingDidFailed];
+                }
+                return;
+            }
+            [inputFiles addObject:inputFile];
+            [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
+        }
+        
+        [outputFile writeHeader];
+        
+        NSTimeInterval playableProgress = 0.0;
+        NSTimeInterval nextSecsInterval = 2.0;
+        NSTimeInterval receivedSecs = 0.0;
+        
+        self->_isConverting = YES;
+        BOOL isReading = YES;
+        BOOL isReadyForReading = NO;
+        NSMutableDictionary<NSNumber *, NSNumber *> *startOffsets = [NSMutableDictionary new];
+        NSDate *startDate = [NSDate date];
+        while (isReading && !self->_isCancelled)
+        {
+            int successfulReadings = 0;
+            for (int i = 0, max = (int)inputFiles.count; i < max; i++) {
+                
+                InputVideoFile *inputFile = inputFiles[i];
+                
+                AVPacket packet;
+                BOOL success = YES;
+                success = [inputFile readIntoPacket:&packet];
+                if (!success) {
+                    NSLog(@"File probably ended!"); //here maybe I should break the loop so there wouldn't be unnecessary frames muxed
+                    break;
+                }
+                successfulReadings++;
+                readSizeBytes += packet.size;
+                
+                packet.stream_index = i;
+                packet.pts = av_rescale_q(packet.pts, [inputFile firstStream]->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
+                packet.dts = av_rescale_q(packet.dts, [inputFile firstStream]->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
+                
+                if (![startOffsets objectForKey:@(packet.stream_index)]) {
+                    startOffsets[@(packet.stream_index)] = @(packet.pts);
+                }
+                
+                packet.pts = packet.pts - startOffsets[@(packet.stream_index)].longValue;
+                packet.dts = packet.dts - startOffsets[@(packet.stream_index)].longValue;
+                
+                NSTimeInterval secs = (float)packet.pts / (outputFile.streams[@(packet.stream_index)].stream->time_base.den / outputFile.streams[@(packet.stream_index)].stream->time_base.num);
+                if (secs > receivedSecs) {
+                    receivedSecs = secs;
+                }
+                
+                success = [outputFile writePacket:&packet];
+                av_packet_unref(&packet);
+                if (!success)   {
+                    
+                    if ([self.delegate respondsToSelector:@selector(muxingDidFailed)]) {
+                        [self.delegate muxingDidFailed];
+                    }
+                    break;
+                }
+                
+                if (readSizeBytes > k_DOWNLOAD_STARTED && !isReadyForReading) {
+                    
+                    isReadyForReading = YES;
+                    if ([self.delegate respondsToSelector:@selector(muxingDidStarted:)]) {
+                        [self.delegate muxingDidStarted:outputFile];
+                    }
+                }
+            }
+            
+            self->_progress = (float)readSizeBytes/(float)expectedSizeBytes;
+            if ([self.delegate respondsToSelector:@selector(muxingProgress:overallProgress:)]) {
+                [self.delegate muxingProgress:playableProgress overallProgress:self->_progress];
+            }
+            
+            if (successfulReadings == 0) {
+                break;
+            }
+            
+            if (receivedSecs >= nextSecsInterval) {
+                nextSecsInterval *= 2;
+                
+                [outputFile writeTrailer];
+                [self renameFrom:outputFile.path to:videoOutputPath];
+                outputFile = [self recreateOutputCopyAtPath:outputFile.path fromPath:videoOutputPath];
+                
+                playableProgress = self->_progress;
+                if ([self.delegate respondsToSelector:@selector(videoPartCanBePlayed:currentProgress:)]) {
+                    [self.delegate videoPartCanBePlayed:videoOutputPath currentProgress:playableProgress];
+                }
+            }
+        }
+        
+        if (self->_isCancelled) {
+            self->_isConverting = NO;
+            
+            if ([[NSFileManager defaultManager] fileExistsAtPath:temporaryOutputPath]) {
+                [[NSFileManager defaultManager] removeItemAtPath:temporaryOutputPath error:nil];
+            }
+            
+            if ([[NSFileManager defaultManager] fileExistsAtPath:videoOutputPath]) {
+                [[NSFileManager defaultManager] removeItemAtPath:videoOutputPath error:nil];
+            }
+            
+            [self notifyAboutAbortingOfConvertations:outputFile];
+            return;
+        }
+        
+        [outputFile writeTrailer];
+        [self renameFrom:outputFile.path to:videoOutputPath];
+        
+        NSDate *endDate = [NSDate date];
+        NSTimeInterval executionTime = [endDate timeIntervalSinceDate:startDate];
+        NSLog(@"Done! execution = %f", executionTime);
+        
+        self->_isConverting = NO;
+        av_dict_free(&options);
+        
+        if ([self.delegate respondsToSelector:@selector(muxingFinished:size:)]) {
+            [self.delegate muxingFinished:outputFolderPath size:readSizeBytes];
+        }
+        
+    });
 }
 
 - (void)singleConvertationInput:(NSString *)inputPath output:(NSString *)outputPath cookie:(NSString *)cookie expectedSize:(unsigned long)size

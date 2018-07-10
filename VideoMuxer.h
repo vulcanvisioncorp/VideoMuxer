@@ -31,6 +31,18 @@ typedef NSNumber *(^OutputIdBlock)(NSInteger trackId);
 @property (nonatomic, readonly) float progress;
 @property (nonatomic, readonly) BOOL isConverting;
 
+- (void)convertInputs:(NSArray<NSString *> *)inputPaths
+             toOutput:(NSString *)outputPath
+         expectedSize:(unsigned long)expectedSizeBytes;
+
+- (void)convertInput:(NSString *)inputPath
+            toFolder:(NSString *)outputsFolderPath
+    outputsExtension:(NSString *)extension
+        expectedSize:(unsigned long)expectedSizeBytes
+preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
+
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict toFolder:(NSString *)outputFolderPath;
+
 - (void)singleConvertationInput:(NSString *)inputPath
                          output:(NSString *)outputPath
                          cookie:(NSString *)cookie
