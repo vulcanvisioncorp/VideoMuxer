@@ -27,25 +27,31 @@ typedef NSNumber *(^OutputIdBlock)(NSInteger trackId);
 
 @interface VideoMuxer : NSObject
 
-@property (weak, nonatomic) id<VideoMuxerDelegate> delegate;
 @property (nonatomic, readonly) float progress;
 @property (nonatomic, readonly) BOOL isConverting;
 
+- (BOOL)containsOperationForFile:(NSString *)fileName;
+
 - (void)convertInputs:(NSArray<NSString *> *)inputPaths
              toOutput:(NSString *)outputPath
+             delegate:(id<VideoMuxerDelegate>)delegate
          expectedSize:(unsigned long)expectedSizeBytes;
 
 - (void)convertInput:(NSString *)inputPath
             toFolder:(NSString *)outputsFolderPath
     outputsExtension:(NSString *)extension
+            delegate:(id<VideoMuxerDelegate>)delegate
         expectedSize:(unsigned long)expectedSizeBytes
 preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
 
-- (void)convertVideosFromJSON:(NSDictionary *)jsonDict toFolder:(NSString *)outputFolderPath;
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict
+                     toFolder:(NSString *)outputFolderPath
+                     delegate:(id<VideoMuxerDelegate>)delegate;
 
 - (void)singleConvertationInput:(NSString *)inputPath
                          output:(NSString *)outputPath
                          cookie:(NSString *)cookie
+                       delegate:(id<VideoMuxerDelegate>)delegate
                    expectedSize:(unsigned long)size;
 
 - (void)abortAllConvertations;
