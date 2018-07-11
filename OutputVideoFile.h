@@ -20,7 +20,7 @@
 - (void)createOutputStreamsForFile:(InputVideoFile *)file;
 - (void)createOutputStream:(AVCodecParameters *)streamParams preferredIndex:(int)streamIndex;
 
-- (void)writeHeader;
+- (BOOL)writeHeader;
 - (BOOL)writePacket:(AVPacket *)packet;
 - (void)writeTrailer;
 

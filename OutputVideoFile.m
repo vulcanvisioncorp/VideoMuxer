@@ -97,17 +97,18 @@
     }
 }
 
-- (void)writeHeader
+- (BOOL)writeHeader
 {
     AVDictionary *options = NULL;
     int ret = avformat_write_header(_pFormatCtx, &options);
+    
+    BOOL success = YES;
     if (ret < 0) {
-        
-        av_dict_free(&options);
-        [self raiseExceptionWithMessage:@"Couldn't write header.."];
+        success = NO;
     }
     
     av_dict_free(&options);
+    return success;
 }
 
 - (BOOL)writePacket:(AVPacket *)packet

@@ -553,7 +553,11 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
         
         [outputFile createOutputStreamsForFile:inputFile];
-        [outputFile writeHeader];
+        BOOL success = [outputFile writeHeader];
+        if (!success) {
+            [self dispatchMuxingDidFailed:delegate];
+            return;
+        }
         
         AVPacket *packet = av_malloc(sizeof(AVPacket));
         int counter = 0;
@@ -569,7 +573,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         while (operation.state == MuxingOperationStateReading)
         {
             counter++;
-            BOOL success = [inputFile readIntoPacket:packet];
+            success = [inputFile readIntoPacket:packet];
             if (!success) {
                 operation.state = MuxingOperationStateSuccess;
                 break;
