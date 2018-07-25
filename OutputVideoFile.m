@@ -56,9 +56,14 @@
 
 - (void)createOutputStreamsForFile:(InputVideoFile *)file
 {
-    for (VideoStream *input_stream in file.streams.allValues)
-    {
-        [self createOutputStream:input_stream.stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
+    NSArray *streamKeys = [file.streams.allKeys sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
+        return obj1 > obj2;
+    }];
+    
+    for (NSNumber *streamId in streamKeys) {
+        
+        VideoStream *st = file.streams[streamId];
+        [self createOutputStream:st.stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
     }
 }
 
