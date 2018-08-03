@@ -474,7 +474,6 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             
             if (expectedSizeBytes > 0) {
                 self->_progress = (float)readSizeBytes/(float)expectedSizeBytes;
-                NSLog(@"progress = %f", self->_progress);
                 [self dispatchMuxingProgress:playableProgress overallProgress:self->_progress operation:operation delegate:delegate];
             }
             
