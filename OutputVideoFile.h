@@ -22,6 +22,7 @@
 
 - (BOOL)writeHeader;
 - (BOOL)writePacket:(AVPacket *)packet;
+- (BOOL)writeFrame:(AVFrame *)frame streamIndex:(int)stream_index;
 - (void)writeTrailer;
 
 

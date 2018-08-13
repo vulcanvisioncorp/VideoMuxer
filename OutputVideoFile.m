@@ -12,7 +12,7 @@
 
 @interface OutputVideoFile()
 {
-    
+    AVCodecContext *_pCodecCtx;
 }
 
 @end
@@ -54,6 +54,28 @@
     }
 }
 
+- (void)initCodecContextIfNeeded:(AVCodecParameters *)params
+{
+    AVCodec *pCodec = avcodec_find_encoder(params->codec_id);
+    if (!pCodec) {
+        NSLog(@"initContextIfNeeded: couldn't create codec!");
+        return;
+    }
+    
+    _pCodecCtx = avcodec_alloc_context3(pCodec);
+    if (avcodec_parameters_to_context(_pCodecCtx, params) < 0) {
+        NSLog(@"initContextIfNeeded: couldn't copy params to codec context!");
+        return;
+    }
+    
+    _pCodecCtx->time_base = (AVRational){1, 30}; //hard cooode...
+    
+    if (avcodec_open2(_pCodecCtx, pCodec, 0) < 0) {
+        NSLog(@"initContextIfNeeded: Couldn't open codec!");
+        return;
+    }
+}
+
 - (void)createOutputStreamsForFile:(InputVideoFile *)file
 {
     NSArray *streamKeys = [file.streams.allKeys sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
@@ -88,6 +110,9 @@
     _streams[@(stream->index)] = [[VideoStream alloc] initWithStream:stream];
     if (_streams.count == 1) {
         _firstStream = stream;
+        
+        AVCodecParameters *pCodecParams = _firstStream->codecpar;
+        [self initCodecContextIfNeeded:pCodecParams];
     }
 }
 
@@ -116,6 +141,39 @@
     return success;
 }
 
+- (BOOL)writeFrame:(AVFrame *)frame streamIndex:(int)stream_index
+{
+    int64_t pts = frame->pts;
+    int64_t dts = frame->pkt_dts;
+    int result = avcodec_send_frame(_pCodecCtx, frame);
+    if (result != 0) {
+        NSLog(@"fetchFrameOutOfPacket: Couldn't send corrected frame");
+        av_frame_unref(frame);
+        return NO; //test
+    }
+    
+    AVPacket *pkt = av_packet_alloc(); //nil; //av_malloc(sizeof(AVPacket));
+    
+    while (result >= 0) {
+        result = avcodec_receive_packet(_pCodecCtx, pkt);
+        if (result == 0) {
+            pkt->stream_index = stream_index;
+            pkt->pts = pts;
+            pkt->dts = dts;
+            NSLog(@"That's a success, bitches! = %d, pts = %lld, dts = %lld, stream_index = %d", pkt->size, pkt->pts, pkt->dts, pkt->stream_index);
+            if (![self writePacket:pkt]) {
+                return NO;
+            }
+        } else if (result == AVERROR(EOF)) {
+            av_frame_unref(frame);
+            return NO;
+        }
+    }
+    av_frame_unref(frame);
+    
+    return YES;//[self writePacket:pkt];
+}
+
 - (BOOL)writePacket:(AVPacket *)packet
 {
     int ret = av_interleaved_write_frame(_pFormatCtx, packet);
@@ -130,7 +188,6 @@
 {
     int ret = av_write_trailer(_pFormatCtx);
     if (ret < 0) {
-        
         [self raiseExceptionWithMessage:@"Couldn't write trailer.."];
     }
 }

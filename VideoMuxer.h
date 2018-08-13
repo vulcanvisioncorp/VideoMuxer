@@ -54,6 +54,10 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
                        delegate:(id<VideoMuxerDelegate>)delegate
                    expectedSize:(unsigned long)size;
 
+- (void)createPreviewAnimationForVideo:(NSString *)inputPath
+                                    at:(NSString *)outputPath
+                              delegate:(id<VideoMuxerDelegate>)delegate;
+
 - (void)abortAllConvertations;
 
 @end

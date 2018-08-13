@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+#import "VideoFrame.h"
 #import "VideoStream.h"
 #import "avformat.h"
 #import "avcodec.h"
@@ -33,5 +34,6 @@ static const NSInteger kVM_PreferredStreamId_Invalid = -1;
 - (void)raiseExceptionWithMessage:(NSString *)msg;
 
 - (void)clear;
+- (void)saveFrame:(AVFrame *)frame width:(int)img_width height:(int)img_height number:(int)number;
 
 @end

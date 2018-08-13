@@ -63,7 +63,9 @@
                                        NULL, NO, kCGRenderingIntentDefault);
     CGColorSpaceRelease(colorSpace);
     
+    NSString *imgPath = [[[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject] URLByAppendingPathComponent:@"test.png"].path;
     UIImage *image = [UIImage imageWithCGImage:cgImage];
+    [UIImageJPEGRepresentation(image, 1.0) writeToFile:imgPath atomically:YES];
     
     CGImageRelease(cgImage);
     CGDataProviderRelease(provider);

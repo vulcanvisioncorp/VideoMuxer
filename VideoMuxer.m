@@ -648,6 +648,69 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
     });
 }
 
+- (void)createPreviewAnimationForVideo:(NSString *)inputPath at:(NSString *)outputPath delegate:(id<VideoMuxerDelegate>)delegate
+{
+    dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
+    dispatch_async(convertQueue, ^{
+        
+        InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];
+        OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputPath];
+        
+        [outputFile createOutputStreamsForFile:inputFile];
+        BOOL success = [outputFile writeHeader];
+        if (!success) {
+            [self dispatchMuxingDidFailed:delegate];
+            return;
+        }
+        
+        NSMutableArray<NSNumber *> *timePoints = [NSMutableArray arrayWithObjects:@(0.0f), @(inputFile.duration * 0.4f), @(inputFile.duration * 0.6f), @(inputFile.duration * 0.8f), @(inputFile.duration * 0.99f), nil];
+        NSMutableArray<NSNumber *> *recordedPacketIds = [NSMutableArray new];
+        
+        int64_t currentPts = 0;
+        BOOL isReading = YES;
+        AVPacket *packet = av_malloc(sizeof(AVPacket));
+        while (isReading)
+        {
+            isReading = [inputFile readIntoPacket:packet];
+            if (!isReading) {
+                break;
+            }
+            packet->pts = av_rescale_q(packet->pts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.streams[@(packet->stream_index)].stream->time_base);
+            packet->dts = av_rescale_q(packet->dts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.streams[@(packet->stream_index)].stream->time_base);
+            
+            NSTimeInterval secs = (float)packet->pts / (outputFile.streams[@(packet->stream_index)].stream->time_base.den / outputFile.streams[@(packet->stream_index)].stream->time_base.num);
+            if (secs >= [timePoints firstObject].doubleValue)
+            {
+                if ([recordedPacketIds containsObject:@(packet->stream_index)]) {
+                    continue;
+                }
+                
+                packet->pts = currentPts;
+                packet->dts = currentPts;
+                
+                BOOL success = [outputFile writePacket:packet];
+                if (!success) {
+                    isReading = NO;
+                    break;
+                }
+                
+                [recordedPacketIds addObject:@(packet->stream_index)];
+                if (recordedPacketIds.count == outputFile.streams.count) {
+                    [recordedPacketIds removeAllObjects];
+                    currentPts += 1.0 * (outputFile.streams[@(packet->stream_index)].stream->time_base.den / outputFile.streams[@(packet->stream_index)].stream->time_base.num);    //that's one second in pts value
+                    [timePoints removeObjectAtIndex:0];
+                    if (timePoints.count == 0) {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        [outputFile writeTrailer];
+        NSLog(@"All done, fuckers!");
+    });
+}
+
 - (OutputVideoFile *)recreateOutputCopyAtPath:(NSString *)outputPath fromPath:(NSString *)inputPath
 {
     InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];

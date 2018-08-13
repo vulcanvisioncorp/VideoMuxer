@@ -17,10 +17,13 @@
 
 @property (nonatomic, readonly) AVCodec *codec;
 @property (nonatomic, readonly) AVCodecParameters *codecParams;
+@property (nonatomic, readonly) NSTimeInterval duration;
 
 - (instancetype)initWithPath:(NSString *)filePath options:(AVDictionary *)options;
 
 - (BOOL)readIntoPacket:(AVPacket *)packet;
 - (BOOL)readIntoPacketFromFirstStream:(AVPacket *)packet;
+
+- (AVFrame *)fetchFrameOutOfPacket:(AVPacket *)packet frameWidth:(int)width frameHeight:(int)height;
 
 @end
