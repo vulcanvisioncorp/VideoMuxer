@@ -12,6 +12,7 @@
 #import "OutputVideoFile.h"
 
 typedef NSNumber *(^OutputIdBlock)(NSInteger trackId);
+typedef void(^CompletionBlock)(BOOL isSuccess);
 
 @protocol VideoMuxerDelegate <NSObject>
 
@@ -56,7 +57,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
 
 - (void)createPreviewAnimationForVideo:(NSString *)inputPath
                                     at:(NSString *)outputPath
-                              delegate:(id<VideoMuxerDelegate>)delegate;
+                            completion:(CompletionBlock)completion;
 
 - (void)abortAllConvertations;
 

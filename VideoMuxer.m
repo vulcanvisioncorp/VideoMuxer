@@ -26,6 +26,7 @@
 
 #import "VideoMuxer.h"
 #import "MuxingOperation.h"
+#import "VideoPacket.h"
 
 static const int k_DOWNLOAD_STARTED = 50000; //in bytes
 
@@ -648,56 +649,63 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
     });
 }
 
-- (void)createPreviewAnimationForVideo:(NSString *)inputPath at:(NSString *)outputPath delegate:(id<VideoMuxerDelegate>)delegate
+- (void)createPreviewAnimationForVideo:(NSString *)inputPath
+                                    at:(NSString *)outputPath
+                            completion:(CompletionBlock)completion
 {
     dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
     dispatch_async(convertQueue, ^{
         
+        if ([[NSFileManager defaultManager] fileExistsAtPath:outputPath]) {
+            [[NSFileManager defaultManager] removeItemAtPath:outputPath error:nil];
+        }
+        
         InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputPath];
         
-        [outputFile createOutputStreamsForFile:inputFile];
+        [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:0];
         BOOL success = [outputFile writeHeader];
         if (!success) {
-            [self dispatchMuxingDidFailed:delegate];
+            completion(NO);
             return;
         }
         
-        NSMutableArray<NSNumber *> *timePoints = [NSMutableArray arrayWithObjects:@(0.0f), @(inputFile.duration * 0.4f), @(inputFile.duration * 0.6f), @(inputFile.duration * 0.8f), @(inputFile.duration * 0.99f), nil];
-        NSMutableArray<NSNumber *> *recordedPacketIds = [NSMutableArray new];
+        NSMutableArray<NSNumber *> *timePoints = [NSMutableArray arrayWithObjects:@(inputFile.duration * 0.2f), @(inputFile.duration * 0.7f), @(inputFile.duration * 0.99f), nil];
         
-        int64_t currentPts = 0;
+        int streamsCount = (int)inputFile.streams.count;
+        NSMutableArray<VideoPacket *> *packets = [NSMutableArray new];
+        NSMutableArray<VideoPacket *> *packetsRow = [NSMutableArray new];
+        
         BOOL isReading = YES;
-        AVPacket *packet = av_malloc(sizeof(AVPacket));
+        AVPacket *packet = av_malloc(sizeof(AVPacket)); //av_packet_alloc();
         while (isReading)
         {
             isReading = [inputFile readIntoPacket:packet];
             if (!isReading) {
                 break;
             }
-            packet->pts = av_rescale_q(packet->pts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.streams[@(packet->stream_index)].stream->time_base);
-            packet->dts = av_rescale_q(packet->dts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.streams[@(packet->stream_index)].stream->time_base);
+            packet->pts = av_rescale_q(packet->pts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.firstStream->time_base);
+            packet->dts = av_rescale_q(packet->dts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.firstStream->time_base);
             
-            NSTimeInterval secs = (float)packet->pts / (outputFile.streams[@(packet->stream_index)].stream->time_base.den / outputFile.streams[@(packet->stream_index)].stream->time_base.num);
+            NSTimeInterval secs = (float)packet->pts / (outputFile.firstStream->time_base.den / outputFile.firstStream->time_base.num);
             if (secs >= [timePoints firstObject].doubleValue)
             {
-                if ([recordedPacketIds containsObject:@(packet->stream_index)]) {
+                if ([packetsRow filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"streamId == %d", packet->stream_index]].count > 0) {
                     continue;
                 }
                 
-                packet->pts = currentPts;
-                packet->dts = currentPts;
+                [packetsRow addObject:[[VideoPacket alloc] init:packet]];
+                packet = av_malloc(sizeof(AVPacket));
                 
-                BOOL success = [outputFile writePacket:packet];
-                if (!success) {
-                    isReading = NO;
-                    break;
-                }
-                
-                [recordedPacketIds addObject:@(packet->stream_index)];
-                if (recordedPacketIds.count == outputFile.streams.count) {
-                    [recordedPacketIds removeAllObjects];
-                    currentPts += 1.0 * (outputFile.streams[@(packet->stream_index)].stream->time_base.den / outputFile.streams[@(packet->stream_index)].stream->time_base.num);    //that's one second in pts value
+                if (packetsRow.count == streamsCount) {
+                    [packetsRow sortUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
+                        VideoPacket *p_1 = (VideoPacket *)obj1;
+                        VideoPacket *p_2 = (VideoPacket *)obj2;
+                        return p_1.packet->stream_index > p_2.packet->stream_index;
+                    }];
+                    [packets addObjectsFromArray:packetsRow];
+                    [packetsRow removeAllObjects];
+                    
                     [timePoints removeObjectAtIndex:0];
                     if (timePoints.count == 0) {
                         break;
@@ -706,8 +714,24 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             }
         }
         
+        int64_t oneSecond = 1.0 * (outputFile.firstStream->time_base.den / outputFile.firstStream->time_base.num); //that's one second in pts value
+        for (int i = 0; i < packets.count; i++) {
+            AVPacket *packet = packets[i].packet;
+            
+            packet->stream_index = outputFile.firstStream->index;
+            packet->dts = oneSecond * i;
+            packet->pts = oneSecond * i;
+            
+            BOOL success = [outputFile writePacket:packet];
+            if (!success) {
+                NSLog(@"createPreviewAnimationForVideo: couldn't write a packet!");
+                completion(NO);
+                break;
+            }
+        }
+        
         [outputFile writeTrailer];
-        NSLog(@"All done, fuckers!");
+        completion(YES);
     });
 }
 

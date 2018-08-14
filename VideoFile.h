@@ -9,7 +9,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import "VideoFrame.h"
 #import "VideoStream.h"
 #import "avformat.h"
 #import "avcodec.h"
