@@ -111,8 +111,8 @@
     if (_streams.count == 1) {
         _firstStream = stream;
         
-        AVCodecParameters *pCodecParams = _firstStream->codecpar;
-        [self initCodecContextIfNeeded:pCodecParams];
+        //AVCodecParameters *pCodecParams = _firstStream->codecpar;
+        //[self initCodecContextIfNeeded:pCodecParams];
     }
 }
 
