@@ -104,7 +104,7 @@ static NSString *const kVVContentSize = @"contentSize";
     
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([delegate respondsToSelector:@selector(muxingDidStarted:)]) {
-            [delegate muxingDidStarted:file];
+            [delegate muxingDidStarted:file.path];
         }
     });
 }
@@ -402,6 +402,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
         
         unsigned long expectedSizeBytes = 0;
+        NSLog(@"json dict = %@", jsonDict);
         NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingSelector:@selector(compare:)];
         for (NSString *camID in sortedKeys)
         {

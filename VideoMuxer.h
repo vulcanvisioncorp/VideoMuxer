@@ -16,7 +16,7 @@ typedef void(^CompletionBlock)(BOOL isSuccess);
 
 @protocol VideoMuxerDelegate <NSObject>
 
-- (void)muxingDidStarted:(OutputVideoFile *)file;
+- (void)muxingDidStarted:(NSString *)outputPath;
 - (void)muxingDidFailed;
 - (void)muxingDidCancelled;
 - (void)muxingProgress:(float)playableProgress overallProgress:(float)progress;
