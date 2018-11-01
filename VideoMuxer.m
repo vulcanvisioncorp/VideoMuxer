@@ -505,7 +505,8 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 
                 NSDate *endDate = [NSDate date];
                 NSTimeInterval executionTime = [endDate timeIntervalSinceDate:startDate];
-                NSLog(@"Done! execution = %f", executionTime);
+                float megabytes = readSizeBytes / 1000.0f / 1000.0f;
+                NSLog(@"Done! execution = %f, size = %f Mb", executionTime, megabytes);
                 
                 if (options) {
                     av_dict_free(&options);
