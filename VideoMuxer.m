@@ -723,6 +723,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             packet->stream_index = outputFile.firstStream->index;
             packet->dts = oneSecond * i;
             packet->pts = oneSecond * i;
+            packet->duration = oneSecond;
             
             BOOL success = [outputFile writePacket:packet];
             if (!success) {
