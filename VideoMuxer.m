@@ -662,8 +662,15 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             [[NSFileManager defaultManager] removeItemAtPath:outputPath error:nil];
         }
         
+        NSMutableArray<NSNumber *> *timePoints = [NSMutableArray arrayWithObjects:@(0.2f), @(0.5f), @(0.8f), nil];
+        
         InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputPath];
+        
+        NSDictionary *description = @{@"viewpoints_count": @(inputFile.streams.count), @"timepoints": timePoints};
+        NSData *descriptionData = [NSJSONSerialization dataWithJSONObject:description options:0 error:nil];
+        NSString *descriptionString = [[NSString alloc] initWithData:descriptionData encoding:NSUTF8StringEncoding];
+        av_dict_set(&outputFile.formatContext->metadata, "description", [descriptionString UTF8String], 0);
         
         [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:0];
         BOOL success = [outputFile writeHeader];
@@ -671,8 +678,6 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             completion(NO);
             return;
         }
-        
-        NSMutableArray<NSNumber *> *timePoints = [NSMutableArray arrayWithObjects:@(inputFile.duration * 0.2f), @(inputFile.duration * 0.7f), @(inputFile.duration * 0.99f), nil];
         
         int streamsCount = (int)inputFile.streams.count;
         NSMutableArray<VideoPacket *> *packets = [NSMutableArray new];
@@ -690,7 +695,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             packet->dts = av_rescale_q(packet->dts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.firstStream->time_base);
             
             NSTimeInterval secs = (float)packet->pts / (outputFile.firstStream->time_base.den / outputFile.firstStream->time_base.num);
-            if (secs >= [timePoints firstObject].doubleValue)
+            if (secs >= [timePoints firstObject].doubleValue * inputFile.duration)
             {
                 if ([packetsRow filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"streamId == %d", packet->stream_index]].count > 0) {
                     continue;
