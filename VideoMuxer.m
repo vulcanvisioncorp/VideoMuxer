@@ -402,7 +402,6 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
         
         unsigned long expectedSizeBytes = 0;
-        NSLog(@"json dict = %@", jsonDict);
         NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingSelector:@selector(compare:)];
         for (NSString *camID in sortedKeys)
         {
