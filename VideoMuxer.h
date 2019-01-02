@@ -49,6 +49,11 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock;
                      toFolder:(NSString *)outputFolderPath
                      delegate:(id<VideoMuxerDelegate>)delegate;
 
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict
+                     toFolder:(NSString *)outputFolderPath
+                     delegate:(id<VideoMuxerDelegate>)delegate
+            deleteLocalInputs:(BOOL)deleteLocalInputs;
+
 - (void)singleConvertationInput:(NSString *)inputPath
                          output:(NSString *)outputPath
                          cookie:(NSString *)cookie
