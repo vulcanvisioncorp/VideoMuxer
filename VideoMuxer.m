@@ -388,6 +388,14 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                      toFolder:(NSString *)outputFolderPath
                      delegate:(id<VideoMuxerDelegate>)delegate
 {
+    [self convertVideosFromJSON:jsonDict toFolder:outputFolderPath delegate:delegate deleteLocalInputs:false];
+}
+
+- (void)convertVideosFromJSON:(NSDictionary *)jsonDict
+                     toFolder:(NSString *)outputFolderPath
+                     delegate:(id<VideoMuxerDelegate>)delegate
+            deleteLocalInputs:(BOOL)deleteLocalInputs
+{
     MuxingOperation *operation = [self createMuxingOperationForFile:[jsonDict objectForKey:@"id"]];
     dispatch_queue_t convertQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0ul);
     dispatch_async(convertQueue, ^{
@@ -523,6 +531,14 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 }
                 
                 [self dispatchMuxingFinished:outputFolderPath size:readSizeBytes delegate:delegate];
+                
+                if (deleteLocalInputs) {
+                    for(InputVideoFile *vf in inputFiles) {
+                        if ([[NSFileManager defaultManager] fileExistsAtPath:vf.path]) {
+                            [[NSFileManager defaultManager] removeItemAtPath:vf.path error:nil];
+                        }
+                    }
+                }
             }
                 break;
             case MuxingOperationStateCancelled:
