@@ -723,8 +723,10 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         AVPacket *packet = av_malloc(sizeof(AVPacket)); //av_packet_alloc();
         while (isReading)
         {
+            packet = av_malloc(sizeof(AVPacket));
             isReading = [inputFile readIntoPacket:packet];
             if (!isReading) {
+                av_packet_free(&packet);
                 break;
             }
             packet->pts = av_rescale_q(packet->pts, inputFile.streams[@(packet->stream_index)].stream->time_base, outputFile.firstStream->time_base);
@@ -734,11 +736,11 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             if (secs >= [timePoints firstObject].doubleValue * inputFile.duration)
             {
                 if ([packetsRow filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"streamId == %d", packet->stream_index]].count > 0) {
+                    av_packet_free(&packet);
                     continue;
                 }
                 
                 [packetsRow addObject:[[VideoPacket alloc] init:packet]];
-                packet = av_malloc(sizeof(AVPacket));
                 
                 if (packetsRow.count == streamsCount) {
                     [packetsRow sortUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
@@ -754,6 +756,8 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                         break;
                     }
                 }
+            } else {
+                av_packet_free(&packet);
             }
         }
         
