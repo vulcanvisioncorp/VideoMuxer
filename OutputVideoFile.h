@@ -18,7 +18,7 @@
 @property (nonatomic, readonly) AVFormatContext *formatContext;
 
 - (void)createOutputStreamsForFile:(InputVideoFile *)file;
-- (void)createOutputStream:(AVCodecParameters *)streamParams preferredIndex:(int)streamIndex customKey:(NSNumber *)customKey;
+- (void)createOutputStream:(AVCodecParameters *)streamParams preferredIndex:(int)streamIndex;
 
 - (BOOL)writeHeader;
 - (BOOL)writePacket:(AVPacket *)packet;

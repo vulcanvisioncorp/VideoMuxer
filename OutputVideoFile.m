@@ -83,12 +83,13 @@
     }];
     
     for (NSNumber *streamId in streamKeys) {
+        
         VideoStream *st = file.streams[streamId];
-        [self createOutputStream:st.stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid customKey:nil];
+        [self createOutputStream:st.stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
     }
 }
 
-- (void)createOutputStream:(AVCodecParameters *)streamParams preferredIndex:(int)streamIndex customKey:(NSNumber *)customKey
+- (void)createOutputStream:(AVCodecParameters *)streamParams preferredIndex:(int)streamIndex
 {
     AVCodec *codec = avcodec_find_encoder(streamParams->codec_id);
     if (!codec) {
@@ -101,13 +102,12 @@
     stream->codecpar->codec_tag = 0;    //some silly workaround
     stream->index = streamIndex == kVM_PreferredStreamId_Invalid ? (int)_streams.count : streamIndex;
     
-    NSNumber *outputKey = customKey == nil ? @(stream->index) : customKey;
-    if ([_streams objectForKey:outputKey] != nil) {
+    if ([_streams objectForKey:@(stream->index)] != nil) {
         NSLog(@"OutputVideoFile: There's such stream id already!");
         return;
     }
     
-    _streams[outputKey] = [[VideoStream alloc] initWithStream:stream];
+    _streams[@(stream->index)] = [[VideoStream alloc] initWithStream:stream];
     if (_streams.count == 1) {
         _firstStream = stream;
         

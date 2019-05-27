@@ -200,7 +200,7 @@ static NSString *const kVVContentSize = @"contentSize";
                 return;
             }
             [inputFiles addObject:inputFile];
-            [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:i customKey: nil];
+            [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:i];
         }
         [outputFile writeHeader];
         
@@ -317,7 +317,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             }
             
             OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:outputFilePath];
-            [outputFile createOutputStream:inputFile.streams[streamId].stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid customKey:nil];
+            [outputFile createOutputStream:inputFile.streams[streamId].stream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
             [outputFile writeHeader];
             
             outputFiles[streamId] = outputFile;
@@ -406,16 +406,11 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         NSString *temporaryOutputPath = [outputFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_temp.mp4", [jsonDict objectForKey:@"id"]]];
         
         AVDictionary *options = nil;
-        NSMutableDictionary<NSNumber *, InputVideoFile *> *inputFiles = [NSMutableDictionary new];
+        NSMutableArray<InputVideoFile *> *inputFiles = [NSMutableArray new];
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
         
         unsigned long expectedSizeBytes = 0;
-        NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
-            return obj1 > obj2;
-        }];
-        
-        NSNumberFormatter *f = [[NSNumberFormatter alloc] init];
-        f.numberStyle = NSNumberFormatterDecimalStyle;
+        NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingSelector:@selector(compare:)];
         for (NSString *camID in sortedKeys)
         {
             NSDictionary *cam = [jsonDict[kVVCameras] objectForKey:camID];
@@ -427,12 +422,8 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 [self dispatchMuxingDidFailed:delegate];
                 return;
             }
-            
-            NSNumber *camIDNumber = [f numberFromString:camID];
-            inputFiles[camIDNumber] = inputFile;
-            [outputFile createOutputStream:inputFile.firstStream->codecpar
-                            preferredIndex:kVM_PreferredStreamId_Invalid
-                                  customKey:camIDNumber];
+            [inputFiles addObject:inputFile];
+            [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:kVM_PreferredStreamId_Invalid];
         }
         
         [outputFile writeHeader];
@@ -445,14 +436,12 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         BOOL isReadyForReading = NO;
         NSMutableDictionary<NSNumber *, NSNumber *> *startOffsets = [NSMutableDictionary new];
         NSDate *startDate = [NSDate date];
-        
-        NSArray<NSNumber *> *camIds = inputFiles.allKeys;
         while (operation.state == MuxingOperationStateReading)
         {
             int successfulReadings = 0;
-            for (NSNumber *camID in camIds)
+            for (int i = 0, max = (int)inputFiles.count; i < max; i++)
             {
-                InputVideoFile *inputFile = inputFiles[camID];
+                InputVideoFile *inputFile = inputFiles[i];
                 
                 AVPacket packet;
                 BOOL success = YES;
@@ -463,9 +452,9 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 successfulReadings++;
                 readSizeBytes += packet.size;
                 
-                packet.stream_index = outputFile.streams[camID].stream->index;
-                packet.pts = av_rescale_q(packet.pts, [inputFile firstStream]->time_base, outputFile.streams[camID].stream->time_base);
-                packet.dts = av_rescale_q(packet.dts, [inputFile firstStream]->time_base, outputFile.streams[camID].stream->time_base);
+                packet.stream_index = i;
+                packet.pts = av_rescale_q(packet.pts, [inputFile firstStream]->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
+                packet.dts = av_rescale_q(packet.dts, [inputFile firstStream]->time_base, outputFile.streams[@(packet.stream_index)].stream->time_base);
                 
                 if (![startOffsets objectForKey:@(packet.stream_index)]) {
                     startOffsets[@(packet.stream_index)] = @(packet.pts);
@@ -474,7 +463,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 packet.pts = packet.pts - startOffsets[@(packet.stream_index)].longValue;
                 packet.dts = packet.dts - startOffsets[@(packet.stream_index)].longValue;
                 
-                NSTimeInterval secs = (float)packet.pts / (outputFile.streams[camID].stream->time_base.den / outputFile.streams[camID].stream->time_base.num);
+                NSTimeInterval secs = (float)packet.pts / (outputFile.streams[@(packet.stream_index)].stream->time_base.den / outputFile.streams[@(packet.stream_index)].stream->time_base.num);
                 if (secs > receivedSecs) {
                     receivedSecs = secs;
                 }
@@ -511,7 +500,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 
                 [outputFile writeTrailer];
                 [self renameFrom:outputFile.path to:videoOutputPath];
-                outputFile = [self recreateOutputCopyAtPath:outputFile.path fromPath:videoOutputPath streamsInfo:outputFile.streams];
+                outputFile = [self recreateOutputCopyAtPath:outputFile.path fromPath:videoOutputPath];
                 
                 playableProgress = self->_progress;
                 [self dispatchVideoPartCanBePlayed:videoOutputPath currentProgress:playableProgress delegate:delegate];
@@ -652,7 +641,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 
                 [outputFile writeTrailer];
                 [self renameFrom:outputFile.path to:outputPath];
-                outputFile = [self recreateOutputCopyAtPath:outputFile.path fromPath:outputPath streamsInfo:outputFile.streams];
+                outputFile = [self recreateOutputCopyAtPath:outputFile.path fromPath:outputPath];
                 
                 playableProgress = self->_progress;
                 [self dispatchVideoPartCanBePlayed:outputPath currentProgress:self->_progress delegate:delegate];
@@ -708,7 +697,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         NSString *descriptionString = [[NSString alloc] initWithData:descriptionData encoding:NSUTF8StringEncoding];
         av_dict_set(&outputFile.formatContext->metadata, "description", [descriptionString UTF8String], 0);
         
-        [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:0 customKey:nil];
+        [outputFile createOutputStream:inputFile.firstStream->codecpar preferredIndex:0];
         BOOL success = [outputFile writeHeader];
         if (!success) {
             completion(NO);
@@ -783,20 +772,12 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
     });
 }
 
-- (OutputVideoFile *)recreateOutputCopyAtPath:(NSString *)outputPath
-                                     fromPath:(NSString *)inputPath
-                                  streamsInfo:(NSDictionary<NSNumber *, VideoStream *> *)streamsInfo
+- (OutputVideoFile *)recreateOutputCopyAtPath:(NSString *)outputPath fromPath:(NSString *)inputPath
 {
     InputVideoFile *inputFile = [[InputVideoFile alloc] initWithPath:inputPath options:NULL];
     OutputVideoFile *newFile = [[OutputVideoFile alloc] initWithPath:outputPath];
     
-    NSArray<NSNumber *> *customStreamIds = [streamsInfo.allKeys sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
-        return obj1 > obj2;
-    }];
-    for (NSNumber *key in customStreamIds) {
-        VideoStream *st = [streamsInfo objectForKey:key];
-        [newFile createOutputStream:st.stream->codecpar preferredIndex:st.stream->index customKey:key];
-    }
+    [newFile createOutputStreamsForFile:inputFile];
     [newFile writeHeader];
     
     AVPacket *packet = av_malloc(sizeof(AVPacket));
