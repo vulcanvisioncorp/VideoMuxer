@@ -470,7 +470,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 
                 success = [outputFile writePacket:&packet];
                 if (!success)   {
-                    [self dispatchMuxingDidFailed:delegate];
+                    operation.state = MuxingOperationStateFailed;
                     break;
                 }
                 av_packet_unref(&packet);
@@ -479,6 +479,10 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                     isReadyForReading = YES;
                     [self dispatchMuxingDidStarted:outputFile delegate:delegate];
                 }
+            }
+            
+            if (operation.state == MuxingOperationStateFailed) {
+                break;
             }
             
             if (expectedSizeBytes > 0) {
@@ -533,6 +537,9 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             case MuxingOperationStateCancelled:
                 NSLog(@"Got cancelled!");
                 [self cancelConvertation:@[temporaryOutputPath, videoOutputPath] delegate:delegate];
+                break;
+            case MuxingOperationStateFailed:
+                [self dispatchMuxingDidFailed:delegate];
                 break;
             default:
                 break;
@@ -617,7 +624,7 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
             if (!success)
             {
                 av_dict_free(&options);
-                [self dispatchMuxingDidFailed:delegate];
+                operation.state = MuxingOperationStateFailed;
                 break;
             }
             
@@ -657,6 +664,9 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
                 break;
             case MuxingOperationStateCancelled:
                 [self cancelConvertation:@[temporaryOutputPath, outputPath] delegate:delegate];
+                break;
+            case MuxingOperationStateFailed:
+                [self dispatchMuxingDidFailed:delegate];
                 break;
             default:
                 break;

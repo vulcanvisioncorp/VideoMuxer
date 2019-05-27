@@ -11,7 +11,8 @@
 typedef NS_ENUM(NSInteger, MuxingOperationState) {
     MuxingOperationStateReading = 0,
     MuxingOperationStateSuccess = 1,
-    MuxingOperationStateCancelled = 2
+    MuxingOperationStateCancelled = 2,
+    MuxingOperationStateFailed = 3
 };
 
 @interface MuxingOperation : NSObject
