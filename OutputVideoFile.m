@@ -78,7 +78,17 @@
 
 - (void)createOutputStreamsForFile:(InputVideoFile *)file
 {
-    NSArray *streamKeys = file.streams.allKeys; //streams is already sorted perfectly, no need to sort it again. And keep in mind, that sortedUsingComparator doesn't quite work with already sorted array
+    NSArray *streamKeys = [file.streams.allKeys sortedArrayUsingComparator:^NSComparisonResult(id obj1, id obj2) {
+        
+        if ([obj1 intValue] == [obj2 intValue])
+            return NSOrderedSame;
+        
+        else if ([obj1 intValue] < [obj2 intValue])
+            return NSOrderedAscending;
+        
+        else
+            return NSOrderedDescending;
+    }];
     
     for (NSNumber *streamId in streamKeys) {
         
