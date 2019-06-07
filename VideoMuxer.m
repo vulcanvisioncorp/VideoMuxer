@@ -410,7 +410,19 @@ preferredOutputIdBlock:(OutputIdBlock)outputIdBlock
         OutputVideoFile *outputFile = [[OutputVideoFile alloc] initWithPath:temporaryOutputPath];
         
         unsigned long expectedSizeBytes = 0;
-        NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        NSArray *sortedKeys = [[jsonDict[kVVCameras] allKeys] sortedArrayUsingComparator:^NSComparisonResult(id obj1, id obj2) {
+            
+            if ([obj1 intValue] == [obj2 intValue])
+                return NSOrderedSame;
+            
+            else if ([obj1 intValue] < [obj2 intValue])
+                return NSOrderedAscending;
+            
+            else
+                return NSOrderedDescending;
+            
+        }];
+        
         for (NSString *camID in sortedKeys)
         {
             NSDictionary *cam = [jsonDict[kVVCameras] objectForKey:camID];
